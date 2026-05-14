@@ -584,7 +584,9 @@ def build_seq_ctx(input_path, dataset_type):
         )
         loader = ScanNetLoader(
             scene_dir=input_path,
-            annotation_path=annotation_path if os.path.exists(annotation_path) else None,
+            annotation_path=annotation_path
+            if os.path.exists(annotation_path)
+            else None,
             skip_frames=1,
             max_frames=None,
         )
@@ -6395,7 +6397,11 @@ class TrackerViewer(SequenceOBBViewer):
                     draw_list = imgui.get_window_draw_list()
 
                     # Draw raw per-frame 3DBB projections
-                    if self.show_rgb_obbs and self.show_rgb_raw and self._rgb_projected_raw_lines:
+                    if (
+                        self.show_rgb_obbs
+                        and self.show_rgb_raw
+                        and self._rgb_projected_raw_lines
+                    ):
                         for (
                             edge_pts,
                             edge_valid,

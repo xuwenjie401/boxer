@@ -78,7 +78,7 @@ class AriaLoader(BaseLoader):
         pinhole=False,
         pinhole_fxy=None,
         resize=None,
-        unrotate=False,
+        unrotate=True,
         skip_n=1,
         max_n=999999,
         start_n=0,
@@ -104,6 +104,12 @@ class AriaLoader(BaseLoader):
         self.obb_max_depth = obb_max_depth
         # Note: self.is_adt is set later after auto-detection
         self.restrict_range = restrict_range
+        if not unrotate:
+            print(
+                "==> AriaLoader forcing unrotate=True so BoxerNet sees upright images"
+            )
+        unrotate = True
+
         print("==> loading AriaLoader with the following settings:")
         print(f"camera: {camera}")
         print(f"with_img: {with_img}")

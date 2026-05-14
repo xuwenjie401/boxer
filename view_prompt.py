@@ -27,7 +27,7 @@ import torch
 import utils.imgui_compat as imgui
 from boxernet.boxernet import BoxerNet, sdp_to_patches
 from owl.owl_wrapper import OwlWrapper
-from utils.demo_utils import CKPT_PATH
+from utils.demo_utils import CKPT_PATH, DEFAULT_BOXERNET_CKPT
 from utils.image import render_depth_patches
 from utils.tw.camera import CameraTW
 from utils.tw.obb import BB3D_LINE_ORDERS, ObbTW
@@ -68,7 +68,7 @@ def main():
     # fmt: off
     parser = argparse.ArgumentParser(description="Interactive 2D BB prompting with BoxerNet")
     add_common_args(parser)
-    parser.add_argument("--ckpt", type=str, default=os.path.join(CKPT_PATH, "boxernet_hw960in4x6d768-wssxpf9p.ckpt"), help="BoxerNet checkpoint")
+    parser.add_argument("--ckpt", type=str, default=os.path.join(CKPT_PATH, DEFAULT_BOXERNET_CKPT), help="BoxerNet checkpoint")
     parser.add_argument("--force_precision", type=str, default=None, choices=["float32", "bfloat16"])
     parser.add_argument("--force_cpu", action="store_true")
     # fmt: on

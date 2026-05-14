@@ -828,8 +828,8 @@ class BoundingBox3DTracker:
                             f"w={all_candidates[j].accumulated_weight:.2f}) -> "
                             f"'{visible_candidates[i].cached_text}' (id={visible_candidates[i].track_id}, "
                             f"w={visible_candidates[i].accumulated_weight:.2f}) "
-                            f"iou3d={iou_matrix[i,j]:.3f} sem={sem_matrix[i,j]:.3f}"
-                            f"{f' iou2d={iou_2d_matrix[i,j]:.3f}' if iou_2d_matrix is not None else ''}"
+                            f"iou3d={iou_matrix[i, j]:.3f} sem={sem_matrix[i, j]:.3f}"
+                            f"{f' iou2d={iou_2d_matrix[i, j]:.3f}' if iou_2d_matrix is not None else ''}"
                         )
                     self._merge_track_pair(visible_candidates[i], all_candidates[j])
                     absorbed_ids.add(all_candidates[j].track_id)
@@ -840,8 +840,8 @@ class BoundingBox3DTracker:
                             f"w={visible_candidates[i].accumulated_weight:.2f}) -> "
                             f"'{all_candidates[j].cached_text}' (id={all_candidates[j].track_id}, "
                             f"w={all_candidates[j].accumulated_weight:.2f}) "
-                            f"iou3d={iou_matrix[i,j]:.3f} sem={sem_matrix[i,j]:.3f}"
-                            f"{f' iou2d={iou_2d_matrix[i,j]:.3f}' if iou_2d_matrix is not None else ''}"
+                            f"iou3d={iou_matrix[i, j]:.3f} sem={sem_matrix[i, j]:.3f}"
+                            f"{f' iou2d={iou_2d_matrix[i, j]:.3f}' if iou_2d_matrix is not None else ''}"
                         )
                     self._merge_track_pair(all_candidates[j], visible_candidates[i])
                     absorbed_ids.add(visible_candidates[i].track_id)
