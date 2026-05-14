@@ -1,0 +1,14 @@
+# Remaining packages needed in the existing jarvis conda environment for
+# headless Boxer runs, tests, and local checks.
+#
+# Already present in jarvis during the check:
+# numpy, opencv-python, tqdm, Pillow, projectaria-tools, scipy, scikit-learn.
+
+# Core Boxer runtime
+torch>=2.0
+dill
+
+# Tests and local checks
+pytest
+pytest-cov
+ruff

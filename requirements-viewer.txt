@@ -1,0 +1,9 @@
+# Optional dependencies for interactive view_*.py demos.
+#
+# If imgui-bundle tries to build from source, stop and use a prebuilt wheel
+# instead. The source build failed in jarvis while configuring MicroTeX.
+--only-binary=:all:
+
+moderngl
+moderngl-window
+imgui-bundle

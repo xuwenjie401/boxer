@@ -102,6 +102,7 @@ def main():
     parser.add_argument("--detector_hw", type=int, default=960, help="resize images before going into 2D detector")
     parser.add_argument("--write_name", default="boxer", type=str, help="name prefix for outputs")
     parser.add_argument("--skip_viz", action="store_true", help="disable headless visualization (on by default)")
+    parser.add_argument("--save_2d_jpg", action="store_true", help="save per-frame 2D detection JPGs")
     parser.add_argument("--cache2d", action="store_true", help="load 2D BBs from CSV instead of running detector")
     parser.add_argument("--cache3d", action="store_true", help="load 3D BBs from CSV instead of running BoxerNet")
     parser.add_argument("--no_sdp", action="store_true", help="turn off SDP input")
@@ -113,6 +114,13 @@ def main():
     parser.add_argument("--ckpt", type=str, default=os.path.join(CKPT_PATH, "boxernet_hw960in4x6d768-wssxpf9p.ckpt"), help="path to BoxerNet checkpoint")
     parser.add_argument("--force_precision", type=str, default=None, choices=["float32", "bfloat16"], help="Override auto-detected inference precision")
     parser.add_argument("--output_dir", type=str, default=EVAL_PATH, help="Output directory for results (default: output/)")
+    parser.add_argument("--oak_voxel_size", type=float, default=0.05, help="OAK RTAB voxel size in meters")
+    parser.add_argument("--oak_hash_cell_size", type=float, default=1.0, help="OAK RTAB spatial hash cell size in meters")
+    parser.add_argument("--oak_visibility_near", type=float, default=0.15, help="OAK RTAB near visibility cutoff in meters")
+    parser.add_argument("--oak_visibility_far", type=float, default=6.0, help="OAK RTAB far visibility cutoff in meters")
+    parser.add_argument("--oak_zbuffer_tolerance", type=float, default=None, help="OAK RTAB z-buffer visibility tolerance in meters")
+    parser.add_argument("--oak_max_sdp_points", type=int, default=100000, help="OAK RTAB max visible SDP points per frame")
+    parser.add_argument("--oak_zbuffer_grid", type=int, default=2, help="OAK RTAB z-buffer grid size in pixels")
     args = parser.parse_args()
 
     if args.fuse and args.track:
@@ -139,7 +147,15 @@ def main():
         _t_prev = now
 
     # Determine dataset type and seq_name from input string
-    if bool(re.search(r"scene\d{4}_\d{2}", args.input)) or "/scannet/" in args.input:
+    input_path = os.path.expanduser(args.input)
+    if (
+        os.path.isdir(input_path)
+        and os.path.isfile(os.path.join(input_path, "metadata.json"))
+        and os.path.isfile(os.path.join(input_path, "poses", "rgb_poses.csv"))
+    ):
+        dataset_type = "oak_rtab"
+        seq_name = os.path.basename(input_path.rstrip("/"))
+    elif bool(re.search(r"scene\d{4}_\d{2}", args.input)) or "/scannet/" in args.input:
         dataset_type = "scannet"
         seq_name = os.path.basename(args.input.rstrip("/"))
     elif args.input in OMNI3D_DATASETS:
@@ -194,7 +210,26 @@ def main():
         return
 
     # Create data loader
-    if dataset_type == "scannet":
+    if dataset_type == "oak_rtab":
+        from loaders.oak_rtab_loader import OakRtabLoader
+
+        print(f"==> Loading OAK RTAB export: {input_path}")
+        loader = OakRtabLoader(
+            input_path,
+            start_frame=args.start_n,
+            skip_frames=args.skip_n,
+            max_frames=args.max_n,
+            resize=None,
+            cache_dir=log_dir,
+            voxel_size=args.oak_voxel_size,
+            hash_cell_size=args.oak_hash_cell_size,
+            visibility_near=args.oak_visibility_near,
+            visibility_far=args.oak_visibility_far,
+            zbuffer_tolerance=args.oak_zbuffer_tolerance,
+            max_sdp_points=args.oak_max_sdp_points,
+            zbuffer_grid=args.oak_zbuffer_grid,
+        )
+    elif dataset_type == "scannet":
         loader = ScanNetLoader(
             scene_dir=args.input,
             annotation_path=os.path.join(
@@ -253,9 +288,9 @@ def main():
     _dbg("loader")
 
     # choose a model checkpoint
-    if torch.backends.mps.is_available() and not args.force_cpu:
+    if not args.force_cpu and torch.backends.mps.is_available():
         device = "mps"
-    elif torch.cuda.is_available() and not args.force_cpu:
+    elif not args.force_cpu and torch.cuda.is_available():
         device = "cuda"
     else:
         device = "cpu"
@@ -317,14 +352,21 @@ def main():
     _dbg("arch_print")
 
     video_dir = os.path.join(log_dir, f"{args.write_name}_viz")
+    two_d_dir = os.path.join(log_dir, "owl_2d_jpg")
     if args.viz_headless:
         safe_delete_folder(
-            video_dir, extensions=[".png"], keep_folder=True, recursive=True
+            video_dir, extensions=[".jpg", ".png"], keep_folder=True, recursive=True
         )
         os.makedirs(video_dir, exist_ok=True)
         print(
             f"==> Current frame: {os.path.join(log_dir, f'{args.write_name}_viz_current.jpg')}"
         )
+    if args.save_2d_jpg:
+        safe_delete_folder(
+            two_d_dir, extensions=[".jpg", ".png"], keep_folder=True, recursive=True
+        )
+        os.makedirs(two_d_dir, exist_ok=True)
+        print(f"==> 2D JPGs: {two_d_dir}")
 
     colors = {
         label: (
@@ -343,6 +385,8 @@ def main():
         sem_id_to_name = {v: k for k, v in sem_name_to_id.items()}
 
     writer = None if args.no_csv else ObbCsvWriter2(csv_path)
+    if writer is not None and os.path.exists(csv2d_out_path):
+        os.remove(csv2d_out_path)
 
     tracker = None
     if args.track:
@@ -358,19 +402,37 @@ def main():
             verbose=False,
         )
 
+    def write_jpg(path, image, quality=85):
+        _, jpg_buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        with open(path, "wb") as f:
+            f.write(jpg_buf.tobytes())
+
+    def write_2d_frame(viz_2d, ii):
+        out_path = os.path.join(two_d_dir, f"owl_2d_{ii:05d}.jpg")
+        write_jpg(out_path, viz_2d)
+        out_path = os.path.join(log_dir, "owl_2d_current.jpg")
+        write_jpg(out_path, viz_2d)
+
     def write_empty_frame(img_np, HH, WW, ii):
         panels = [img_np, img_np]
         if args.track:
             panels.append(img_np)
         final = np.hstack(panels)
-        _, jpg_buf = cv2.imencode(".jpg", final, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        jpg_bytes = jpg_buf.tobytes()
         out_path = os.path.join(video_dir, f"{args.write_name}_viz_{ii:05d}.jpg")
-        with open(out_path, "wb") as f:
-            f.write(jpg_bytes)
+        write_jpg(out_path, final)
         out_path = os.path.join(log_dir, f"{args.write_name}_viz_current.jpg")
-        with open(out_path, "wb") as f:
-            f.write(jpg_bytes)
+        write_jpg(out_path, final)
+        if args.save_2d_jpg:
+            viz_2d = img_np.copy()
+            put_text(
+                viz_2d,
+                f"2D Detections ({method} {args.detector_hw}x{args.detector_hw})",
+                scale=0.6,
+                line=0,
+            )
+            t_sec = int(datum["time_ns0"]) / 1e9
+            put_text(viz_2d, f"frame {ii}, t={t_sec:.3f}s", scale=0.5, line=2)
+            write_2d_frame(viz_2d, ii)
 
     timestamps_ns = []  # Collect timestamps to compute FPS
     timer = CudaTimer(device)
@@ -636,6 +698,9 @@ def main():
                 _t2 = time.perf_counter()
                 print(f"  [viz] 2d_panel: {(_t2 - _t1) * 1000:.1f}ms", flush=True)
 
+            if args.save_2d_jpg:
+                write_2d_frame(viz_2d, ii)
+
             # 3D BB Viz on image.
             viz_3d = img_np.copy()
 
@@ -745,14 +810,10 @@ def main():
                 _t5 = time.perf_counter()
                 print(f"  [viz] panels+hstack: {(_t5 - _t4) * 1000:.1f}ms", flush=True)
 
-            _, jpg_buf = cv2.imencode(".jpg", final, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            jpg_bytes = jpg_buf.tobytes()
             out_path = os.path.join(video_dir, f"{args.write_name}_viz_{ii:05d}.jpg")
-            with open(out_path, "wb") as f:
-                f.write(jpg_bytes)
+            write_jpg(out_path, final)
             out_path = os.path.join(log_dir, f"{args.write_name}_viz_current.jpg")
-            with open(out_path, "wb") as f:
-                f.write(jpg_bytes)
+            write_jpg(out_path, final)
 
             if DEBUG_VIZ:
                 _t6 = time.perf_counter()

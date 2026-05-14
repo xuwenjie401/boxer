@@ -134,7 +134,7 @@ class OrbitViewer(mglw.WindowConfig):
         dpi = self.wnd.pixel_ratio
         # Increase font size on Linux for better readability
         if platform.system() == "Linux":
-            imgui.get_style().font_scale_main = dpi * scale_factor
+            imgui.set_global_font_scale(dpi * scale_factor)
             # Also scale UI elements (sliders, buttons, etc.) on Linux
             style = imgui.get_style()
             # Manually scale style sizes since scale_all_sizes() may not be available
@@ -159,7 +159,7 @@ class OrbitViewer(mglw.WindowConfig):
             if dpi > 1.0:
                 style = imgui.get_style()
                 style.scale_all_sizes(dpi)
-                imgui.get_style().font_scale_main = dpi
+                imgui.set_global_font_scale(dpi)
 
         # --- Orbit camera controls ---
         self.camera_distance = 5.0
@@ -863,12 +863,50 @@ def load_common(args):
     return input_path, dataset_type, seq_name, log_dir, view_path, load_view_data
 
 
+def _system_glvnd_preload() -> str:
+    """Return system GLVND libs that avoid imgui-bundle's bundled GLX on Linux."""
+    paths = [
+        "/lib/x86_64-linux-gnu/libGLX.so.0",
+        "/lib/x86_64-linux-gnu/libOpenGL.so.0",
+        "/lib/x86_64-linux-gnu/libGLdispatch.so.0",
+    ]
+    if platform.system() != "Linux" or not all(os.path.exists(p) for p in paths):
+        return ""
+    return ":".join(paths)
+
+
+def _ensure_system_glvnd_preload() -> None:
+    """Restart once with system GLVND libs before imgui OpenGL init."""
+    if os.environ.get("BOXER_DISABLE_SYSTEM_GL_PRELOAD") == "1":
+        return
+    preload = _system_glvnd_preload()
+    if not preload:
+        return
+    current = os.environ.get("LD_PRELOAD", "")
+    required = preload.split(":")
+    if all(p in current.split(":") for p in required):
+        return
+    if os.environ.get("BOXER_SYSTEM_GL_PRELOAD_APPLIED") == "1":
+        return
+
+    env = os.environ.copy()
+    env["LD_PRELOAD"] = preload + (":" + current if current else "")
+    env["BOXER_SYSTEM_GL_PRELOAD_APPLIED"] = "1"
+    print("==> Restarting viewer with system GLVND libraries for imgui-bundle")
+    os.execvpe(sys.executable, [sys.executable] + sys.argv, env)
+
+
 def launch_viewer(ViewerClass):
     """Run moderngl viewer, protecting sys.argv."""
+    _ensure_system_glvnd_preload()
+    window_backend = os.environ.get("BOXER_MGL_WINDOW")
+    if not window_backend and platform.system() == "Linux":
+        window_backend = "glfw"
     saved_argv = sys.argv.copy()
     sys.argv = [sys.argv[0]]
+    mglw_args = ["--window", window_backend] if window_backend else None
     try:
-        mglw.run_window_config(ViewerClass)
+        mglw.run_window_config(ViewerClass, args=mglw_args)
     finally:
         sys.argv = saved_argv
 

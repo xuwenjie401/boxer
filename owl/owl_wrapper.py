@@ -269,9 +269,18 @@ class OwlWrapper(nn.Module):
         import hashlib
 
         prompt_hash = hashlib.md5("\n".join(text_prompts).encode()).hexdigest()[:12]
-        cache_path = _CKPT_PATH.replace(".pt", f"_textemb_{prompt_hash}.pt")
-        if os.path.exists(cache_path):
-            cached = torch.load(cache_path, map_location=device, weights_only=False)
+        legacy_cache_path = _CKPT_PATH.replace(".pt", f"_textemb_{prompt_hash}.pt")
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cache_dir = os.environ.get(
+            "BOXER_OWL_TEXT_CACHE_DIR",
+            os.path.join(repo_root, "output", "owl_text_cache"),
+        )
+        cache_path = os.path.join(cache_dir, f"owlv2_textemb_{prompt_hash}.pt")
+        read_cache_path = (
+            legacy_cache_path if os.path.exists(legacy_cache_path) else cache_path
+        )
+        if os.path.exists(read_cache_path):
+            cached = torch.load(read_cache_path, map_location=device, weights_only=False)
             if isinstance(cached, dict) and "embeddings" in cached:
                 self.text_embeddings = cached["embeddings"]
             else:
@@ -282,10 +291,14 @@ class OwlWrapper(nn.Module):
             _dbg(f"load cached text embeddings ({len(text_prompts)} prompts)")
         else:
             self.text_embeddings = self._encode_text(text_prompts)
-            torch.save(
-                {"prompts": text_prompts, "embeddings": self.text_embeddings.cpu()},
-                cache_path,
-            )
+            try:
+                os.makedirs(cache_dir, exist_ok=True)
+                torch.save(
+                    {"prompts": text_prompts, "embeddings": self.text_embeddings.cpu()},
+                    cache_path,
+                )
+            except OSError as exc:
+                print(f"Warning: failed to save OWL text embedding cache: {exc}")
             self.text_embeddings = self.text_embeddings.to(device)
             _dbg(f"encode_text ({len(text_prompts)} prompts) + save cache")
         self.query_mask = torch.ones(len(text_prompts), dtype=torch.bool, device=device)

@@ -95,7 +95,11 @@ def push_style_color(idx, r, g, b, a=1.0):
 
 
 def image(texture_id, width, height, **kwargs):
-    tex_ref = _imgui.ImTextureRef(int(texture_id))
+    tex_ref = (
+        _imgui.ImTextureRef(int(texture_id))
+        if hasattr(_imgui, "ImTextureRef")
+        else int(texture_id)
+    )
     _imgui.image(tex_ref, _imgui.ImVec2(width, height))
 
 
@@ -119,6 +123,25 @@ def get_item_rect_min():
 
 def get_window_position():
     return _imgui.get_window_pos()
+
+
+def set_global_font_scale(scale):
+    """Set global font scaling across imgui-bundle/pyimgui variants."""
+    style = _imgui.get_style()
+    if hasattr(style, "font_scale_main"):
+        style.font_scale_main = scale
+    else:
+        _imgui.get_io().font_global_scale = scale
+
+
+def multiply_global_font_scale(multiplier):
+    """Multiply global font scaling across imgui-bundle/pyimgui variants."""
+    style = _imgui.get_style()
+    if hasattr(style, "font_scale_main"):
+        style.font_scale_main *= multiplier
+    else:
+        io = _imgui.get_io()
+        io.font_global_scale *= multiplier
 
 
 # Re-export commonly used functions that have the same signature so they
