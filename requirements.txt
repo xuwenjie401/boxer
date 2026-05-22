@@ -1,0 +1,26 @@
+# Supplemental runtime packages for the existing `jarvis` conda env.
+#
+# Keep torch out of this file: `jarvis` already has a CUDA-enabled PyTorch
+# build, and installing torch via pip can accidentally replace it.
+#
+# Already present in `jarvis` during the local check:
+#   torch 2.8.0+cu128, numpy 1.26.4, opencv-python 4.11.0, tqdm, Pillow,
+#   scipy, scikit-learn, transformers
+
+# README-listed runtime dependency; currently missing from `jarvis`.
+dill
+
+# Needed when running Aria/VRS data through loaders/aria_loader.py.
+projectaria-tools
+
+# Needed when running raw Galbot/Isaac ROS2 .db3 recordings.
+rosbags
+
+# Needed by view_prompt.py, view_fusion.py, view_tracker.py and utils/viewer_3d.py.
+moderngl
+moderngl-window
+imgui-bundle
+
+# Optional test-only packages:
+# pytest
+# pytest-cov

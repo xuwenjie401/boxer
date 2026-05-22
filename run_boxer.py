@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from boxernet.boxernet import BoxerNet
 from loaders.ca_loader import CALoader
+from loaders.galbot_loader import GalbotLoader, is_galbot_sequence
 from loaders.omni_loader import OMNI3D_DATASETS, OmniLoader
 from loaders.scannet_loader import ScanNetLoader
 from utils.demo_utils import (
@@ -95,7 +96,7 @@ def main():
     parser.add_argument("--start_n", type=int, default=1, help="start from n-th frame")
     parser.add_argument("--max_n", type=int, default=99999, help="run for max n frames")
     parser.add_argument("--pinhole", action="store_true", help="rectify to pinhole")
-    parser.add_argument("--camera", type=str, default="rgb", choices=["rgb", "slaml", "slamr"], help="camera to use (default: rgb)")
+    parser.add_argument("--camera", type=str, default="rgb", choices=["rgb", "slaml", "slamr", "head", "hand_left", "hand_right"], help="camera to use (default: rgb; Galbot/Isaac maps rgb to head)")
     parser.add_argument("--detector", type=str, default="owl", choices=["owl"], help="2D detector to use (default: owl)")
     parser.add_argument("--thresh2d", type=float, default=0.25, help="detection confidence for 2d detector")
     parser.add_argument("--thresh3d", type=float, default=0.5, help="detection confidence for boxer")
@@ -114,6 +115,7 @@ def main():
     parser.add_argument("--ckpt", type=str, default=os.path.join(CKPT_PATH, DEFAULT_BOXERNET_CKPT), help="path to BoxerNet checkpoint")
     parser.add_argument("--force_precision", type=str, default=None, choices=["float32", "bfloat16"], help="Override auto-detected inference precision")
     parser.add_argument("--output_dir", type=str, default=EVAL_PATH, help="Output directory for results (default: output/)")
+    parser.add_argument("--realtime", action="store_true", help="pace processing to input timestamps when reading recorded data")
     args = parser.parse_args()
 
     if args.fuse and args.track:
@@ -149,6 +151,9 @@ def main():
     elif args.input.startswith("ca1m"):
         dataset_type = "ca1m"
         seq_name = args.input
+    elif is_galbot_sequence(args.input):
+        dataset_type = "galbot"
+        seq_name = os.path.splitext(os.path.basename(args.input.rstrip("/")))[0]
     else:
         dataset_type = "aria"
         remote_root = args.input
@@ -233,6 +238,15 @@ def main():
             max_frames=args.max_n,
             resize=(args.detector_hw, args.detector_hw),
         )
+    elif dataset_type == "galbot":
+        galbot_camera = "head" if args.camera == "rgb" else args.camera
+        loader = GalbotLoader(
+            args.input,
+            camera=galbot_camera,
+            skip_frames=args.skip_n,
+            max_frames=args.max_n,
+            start_frame=args.start_n,
+        )
     else:
         from loaders.aria_loader import AriaLoader
 
@@ -300,6 +314,8 @@ def main():
     boxernet = BoxerNet.load_from_checkpoint(args.ckpt, device=device)
     loader.resize = boxernet.hw
     # Re-trigger prefetch so the first frame uses the correct resize.
+    if getattr(loader, "_prefetch_thread", None) is not None:
+        loader._prefetch_thread.join()
     loader._init_prefetch()
     print(f"==> Will resize images to {loader.resize}x{loader.resize} for boxernet")
     _dbg("boxernet")
@@ -376,6 +392,8 @@ def main():
     timer = CudaTimer(device)
     pbar = tqdm(range(len(loader)), desc="BoxerNet")
     DEBUG_VIZ = os.environ.get("DEBUG_VIZ", "0") == "1"
+    realtime_wall0 = None
+    realtime_time0_ns = None
     _dbg("ready")
 
     for ii in pbar:
@@ -404,6 +422,18 @@ def main():
         HH, WW = img_torch.shape[2], img_torch.shape[3]
         img_np = torch2cv2(img_torch, rotate=rotated, ensure_rgb=True)
         t_load = timer.stop("load")
+
+        if args.realtime and "time_ns0" in datum:
+            now_ns = int(datum["time_ns0"])
+            if realtime_wall0 is None:
+                realtime_wall0 = time.perf_counter()
+                realtime_time0_ns = now_ns
+            else:
+                target_s = (now_ns - realtime_time0_ns) / 1e9
+                elapsed_s = time.perf_counter() - realtime_wall0
+                sleep_s = target_s - elapsed_s
+                if sleep_s > 0:
+                    time.sleep(min(sleep_s, 1.0))
 
         if DEBUG_VIZ:
             _tl2 = time.perf_counter()

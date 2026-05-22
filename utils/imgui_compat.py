@@ -166,14 +166,12 @@ class _DrawListWrapper:
         self._dl.add_line(_imgui.ImVec2(x1, y1), _imgui.ImVec2(x2, y2), col, thickness)
 
     def add_rect(self, x1, y1, x2, y2, col, rounding=0.0, flags=0, thickness=1.0):
-        self._dl.add_rect(
-            _imgui.ImVec2(x1, y1),
-            _imgui.ImVec2(x2, y2),
-            col,
-            rounding,
-            flags,
-            thickness,
-        )
+        p_min = _imgui.ImVec2(x1, y1)
+        p_max = _imgui.ImVec2(x2, y2)
+        try:
+            self._dl.add_rect(p_min, p_max, col, rounding, thickness, flags)
+        except TypeError:
+            self._dl.add_rect(p_min, p_max, col, rounding, flags, thickness)
 
     def add_rect_filled(self, x1, y1, x2, y2, col, rounding=0.0, flags=0):
         self._dl.add_rect_filled(

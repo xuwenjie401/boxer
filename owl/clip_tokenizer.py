@@ -18,9 +18,10 @@ from functools import lru_cache
 import torch
 import torch.nn.functional as F
 
+from utils.demo_utils import CKPT_PATH
+
 _CKPT_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "ckpts",
+    CKPT_PATH,
     "owlv2-base-patch16-ensemble.pt",
 )
 

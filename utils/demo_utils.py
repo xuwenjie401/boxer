@@ -11,7 +11,11 @@ import torch
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EVAL_PATH = os.path.join(_REPO_ROOT, "output")
-CKPT_PATH = os.path.join(_REPO_ROOT, "ckpts")
+_HF_CKPT_PATH = os.path.expanduser("~/huggingface/boxer")
+CKPT_PATH = os.environ.get(
+    "BOXER_CKPT_DIR",
+    _HF_CKPT_PATH if os.path.isdir(_HF_CKPT_PATH) else os.path.join(_REPO_ROOT, "ckpts"),
+)
 SAMPLE_DATA_PATH = os.path.join(_REPO_ROOT, "sample_data")
 DEFAULT_BOXERNET_CKPT = "boxernet_hw960in4x6d768-3e37cfc4.ckpt"
 

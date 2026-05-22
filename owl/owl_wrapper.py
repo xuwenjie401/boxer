@@ -18,6 +18,7 @@ from owl.owlv2_model import (
     Owlv2BoxPredictionHead,
     Owlv2ClassPredictionHead,
 )
+from utils.demo_utils import CKPT_PATH, EVAL_PATH
 from utils.taxonomy import load_text_labels
 
 DEFAULT_TEXT_LABELS = load_text_labels("lvisplus")
@@ -127,8 +128,7 @@ class VisionDetectorWrapper(nn.Module):
 
 
 _CKPT_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "ckpts",
+    CKPT_PATH,
     "owlv2-base-patch16-ensemble.pt",
 )
 
@@ -253,7 +253,7 @@ class OwlWrapper(nn.Module):
         else:
             self.vision_detector.to(device=device)
         self.vision_detector.eval()
-        if device == "cuda":
+        if device == "cuda" and os.environ.get("BOXER_DISABLE_COMPILE", "0") != "1":
             self.vision_detector = torch.compile(self.vision_detector)
         _dbg("vision_detector")
 
@@ -269,7 +269,11 @@ class OwlWrapper(nn.Module):
         import hashlib
 
         prompt_hash = hashlib.md5("\n".join(text_prompts).encode()).hexdigest()[:12]
-        cache_path = _CKPT_PATH.replace(".pt", f"_textemb_{prompt_hash}.pt")
+        cache_dir = os.environ.get("BOXER_CACHE_DIR", os.path.join(EVAL_PATH, "cache"))
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_path = os.path.join(
+            cache_dir, f"owlv2-base-patch16-ensemble_textemb_{prompt_hash}.pt"
+        )
         if os.path.exists(cache_path):
             cached = torch.load(cache_path, map_location=device, weights_only=False)
             if isinstance(cached, dict) and "embeddings" in cached:
